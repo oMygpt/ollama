@@ -1,6 +1,6 @@
 # .github/workflows/sync-ollama.yml
 
-name: Sync Latest Ollama Images to GHCR
+name: Sync Latest Stable Ollama Images to GHCR
 
 on:
   # 每日排程觸發：設定於 UTC 時間 凌晨 2 點執行
@@ -20,7 +20,7 @@ env:
 
 jobs:
   sync:
-    name: Sync Latest Ollama Images
+    name: Sync Latest Stable Ollama Images
     # 使用最新的 Ubuntu 虛擬環境
     runs-on: ubuntu-latest
     
@@ -30,37 +30,37 @@ jobs:
       packages: write    # 寫入 GitHub Packages (GHCR)
 
     steps:
-      # 步驟 1: 拉取 repo 程式碼 (雖然此 workflow 不使用程式碼，但這是個好習慣)
+      # 步驟 1: 拉取 repo 程式碼
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 步驟 2: 安裝 crane 工具，這是一個高效處理容器鏡像的工具
+      # 步驟 2: 安裝 crane 工具
       - name: Set up crane
         uses: imjasonh/setup-crane@v0.1
 
-      # 步驟 3: 登入 Docker Hub，需要使用您設定的 Secrets
+      # 步驟 3: 登入 Docker Hub
       - name: Login to Docker Hub
         run: crane auth login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }} docker.io
         
-      # 步驟 4: 登入 GitHub Container Registry (GHCR)，使用 Action 自動產生的 GITHUB_TOKEN
+      # 步驟 4: 登入 GitHub Container Registry (GHCR)
       - name: Login to GitHub Container Registry
         run: crane auth login -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
         
-      # 步驟 5: 執行同步邏輯
-      - name: Sync latest N tags from Docker Hub to GHCR
+      # 步驟 5: 執行智能過濾與同步邏輯
+      - name: Filter and Sync Latest Stable Tags
         run: |
-          echo "Fetching tags from ${{ env.SOURCE_REPO }}..."
+          echo "Fetching all tags from ${{ env.SOURCE_REPO }}..."
           
-          # 1. 取得所有標籤
-          # 2. 使用 -V 參數進行版本號排序 (這能正確處理 0.1.10 > 0.1.9)
-          # 3. 使用 tail -n 20 取出排序最高的 20 個標籤
-          tags_to_sync=$(crane ls ${{ env.SOURCE_REPO }} | sort -V | tail -n 3)
+          # 1. 使用正規表示式 grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' 精準過濾出純數字版本號 (X.Y.Z)
+          #    這會自動排除所有包含 'rc', 'rocm', 'cuda' 等後綴的標籤
+          # 2. 使用 sort -V 進行版本號排序
+          # 3. 使用 tail -n 10 選取最新的 10 個穩定版
+          stable_tags=$(crane ls ${{ env.SOURCE_REPO }} | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 10)
           
-          # 4. 為了確保 'latest' 標籤總是被同步，將它加入清單
-          #    使用 sort -u 可以合併並去除重複的項目
-          final_tags=$(echo -e "${tags_to_sync}\nlatest" | sort -u)
+          # 4. 為了確保 'latest' 標籤總是被同步，將它加入清單並去重
+          final_tags=$(echo -e "${stable_tags}\nlatest" | sort -u)
 
-          echo "The following tags will be synced:"
+          echo "The following stable tags will be synced:"
           echo "${final_tags}"
           
           echo "Starting sync to ${{ env.TARGET_REPO }}..."
