@@ -54,7 +54,7 @@ jobs:
           # 1. 取得所有標籤
           # 2. 使用 -V 參數進行版本號排序 (這能正確處理 0.1.10 > 0.1.9)
           # 3. 使用 tail -n 20 取出排序最高的 20 個標籤
-          tags_to_sync=$(crane ls ${{ env.SOURCE_REPO }} | sort -V | tail -n 20)
+          tags_to_sync=$(crane ls ${{ env.SOURCE_REPO }} | sort -V | tail -n 3)
           
           # 4. 為了確保 'latest' 標籤總是被同步，將它加入清單
           #    使用 sort -u 可以合併並去除重複的項目
