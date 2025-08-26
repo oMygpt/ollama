@@ -14,7 +14,7 @@ env:
   # 來源 Docker Hub 倉庫
   SOURCE_REPO: ollama/ollama
   # 目標 GHCR 倉庫 (請務必修改 YOUR_USERNAME)
-  TARGET_REPO: ghcr.io/oMygpt/ollama
+  TARGET_REPO: ghcr.io/omygpt/ollama
 
 jobs:
   sync:
