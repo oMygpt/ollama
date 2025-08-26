@@ -1,55 +1,70 @@
 # .github/workflows/sync-ollama.yml
 
-name: Sync DockerHub Ollama to GHCR
+name: Sync Latest Ollama Images to GHCR
 
 on:
-  # 每天台北時間上午 10 點執行一次 (2 AM UTC)
+  # 每日排程觸發：設定於 UTC 時間 凌晨 2 點執行
+  # 這對應到台灣/香港/北京時間 (CST, UTC+8) 的上午 10 點
   schedule:
     - cron: '0 2 * * *'
   
-  # 允許手動從 Actions 頁面觸發此 workflow
+  # 手動觸發：允許您隨時從 GitHub 網站的 Actions 頁面手動執行
   workflow_dispatch:
 
+# 環境變數，方便統一管理
 env:
   # 來源 Docker Hub 倉庫
   SOURCE_REPO: ollama/ollama
-  # 目標 GHCR 倉庫 (請務必修改 YOUR_USERNAME)
+  # 目標 GHCR 倉庫 (請務必修改 YOUR_USERNAME 為您自己的 GitHub 使用者名稱，且必須為小寫)
   TARGET_REPO: ghcr.io/omygpt/ollama
 
 jobs:
   sync:
-    name: Sync Ollama Images
+    name: Sync Latest Ollama Images
+    # 使用最新的 Ubuntu 虛擬環境
     runs-on: ubuntu-latest
     
-    # 賦予 job 寫入 GitHub Packages (GHCR) 的權限
+    # 賦予 job 必要的權限
     permissions:
-      contents: read
-      packages: write
+      contents: read      # 讀取 repo 內容 (例如 checkout)
+      packages: write    # 寫入 GitHub Packages (GHCR)
 
     steps:
+      # 步驟 1: 拉取 repo 程式碼 (雖然此 workflow 不使用程式碼，但這是個好習慣)
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 步驟 2: 安裝 crane 工具，這是一個高效處理容器鏡像的工具
       - name: Set up crane
         uses: imjasonh/setup-crane@v0.1
 
+      # 步驟 3: 登入 Docker Hub，需要使用您設定的 Secrets
       - name: Login to Docker Hub
-        # 登入 Docker Hub 以避免速率限制
         run: crane auth login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }} docker.io
-
+        
+      # 步驟 4: 登入 GitHub Container Registry (GHCR)，使用 Action 自動產生的 GITHUB_TOKEN
       - name: Login to GitHub Container Registry
-        # 使用 GITHUB_TOKEN 自動登入 GHCR
         run: crane auth login -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
         
-      - name: Sync all tags from Docker Hub to GHCR
+      # 步驟 5: 執行同步邏輯
+      - name: Sync latest N tags from Docker Hub to GHCR
         run: |
           echo "Fetching tags from ${{ env.SOURCE_REPO }}..."
-          # 取得來源倉庫的所有標籤
-          tags=$(crane ls ${{ env.SOURCE_REPO }})
+          
+          # 1. 取得所有標籤
+          # 2. 使用 -V 參數進行版本號排序 (這能正確處理 0.1.10 > 0.1.9)
+          # 3. 使用 tail -n 20 取出排序最高的 20 個標籤
+          tags_to_sync=$(crane ls ${{ env.SOURCE_REPO }} | sort -V | tail -n 20)
+          
+          # 4. 為了確保 'latest' 標籤總是被同步，將它加入清單
+          #    使用 sort -u 可以合併並去除重複的項目
+          final_tags=$(echo -e "${tags_to_sync}\nlatest" | sort -u)
+
+          echo "The following tags will be synced:"
+          echo "${final_tags}"
           
           echo "Starting sync to ${{ env.TARGET_REPO }}..."
-          # 遍歷所有標籤並複製
-          for tag in $tags; do
+          for tag in $final_tags; do
             echo "--> Syncing tag: $tag"
             crane copy "${{ env.SOURCE_REPO }}:$tag" "${{ env.TARGET_REPO }}:$tag"
           done
