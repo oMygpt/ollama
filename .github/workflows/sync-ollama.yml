@@ -112,13 +112,31 @@ jobs:
             exit 1
           fi
           
-          # 2. 同步到阿里雲 ACR
+          # 2. 同步到阿里雲 ACR (使用分步方式避免跨仓库挂载问题)
           echo "--> Syncing to Aliyun CR: ${{ env.ALIYUN_TARGET_REPO }}:$TAG"
-          if crane copy "${{ env.SOURCE_REPO }}:$TAG" "${{ env.ALIYUN_TARGET_REPO }}:$TAG"; then
-            echo "✅ Aliyun CR sync completed successfully"
+          
+          # 方法1: 尝试直接复制
+          echo "Attempting direct copy..."
+          if crane copy "${{ env.SOURCE_REPO }}:$TAG" "${{ env.ALIYUN_TARGET_REPO }}:$TAG" 2>&1 | tee copy_log.txt; then
+            echo "✅ Aliyun CR direct copy completed successfully"
           else
-            echo "❌ Aliyun CR sync failed"
-            exit 1
+            echo "Direct copy failed, trying alternative method..."
+            
+            # 方法2: 通过本地缓存方式
+            echo "Pulling image locally first..."
+            if crane pull "${{ env.SOURCE_REPO }}:$TAG" /tmp/image.tar; then
+              echo "Pushing to Aliyun CR from local cache..."
+              if crane push /tmp/image.tar "${{ env.ALIYUN_TARGET_REPO }}:$TAG"; then
+                echo "✅ Aliyun CR sync completed via local cache"
+              else
+                echo "❌ Both methods failed for Aliyun CR sync"
+                cat copy_log.txt || true
+                exit 1
+              fi
+            else
+              echo "❌ Failed to pull image locally"
+              exit 1
+            fi
           fi
           
           echo "🎉 vllm-openai multi-registry sync completed!"
