@@ -1,6 +1,6 @@
-# .github/workflows/sync-ollama.yml
+# .github/workflows/sync-images.yml
 
-name: Sync Latest Stable Ollama Images to GHCR
+name: Sync Docker Images to GHCR
 
 on:
   # 每日排程觸發：設定於 UTC 時間 凌晨 2 點執行
@@ -11,43 +11,34 @@ on:
   # 手動觸發：允許您隨時從 GitHub 網站的 Actions 頁面手動執行
   workflow_dispatch:
 
-# 環境變數，方便統一管理
-env:
-  # 來源 Docker Hub 倉庫
-  SOURCE_REPO: ollama/ollama
-  # 目標 GHCR 倉庫 (請務必修改 YOUR_USERNAME 為您自己的 GitHub 使用者名稱，且必須為小寫)
-  TARGET_REPO: ghcr.io/omygpt/ollama
-
 jobs:
-  sync:
+  sync-ollama:
     name: Sync Latest Stable Ollama Images
-    # 使用最新的 Ubuntu 虛擬環境
     runs-on: ubuntu-latest
-    
-    # 賦予 job 必要的權限
     permissions:
-      contents: read      # 讀取 repo 內容 (例如 checkout)
-      packages: write    # 寫入 GitHub Packages (GHCR)
+      contents: read
+      packages: write
+
+    env:
+      # 來源 Docker Hub 倉庫
+      SOURCE_REPO: ollama/ollama
+      # 目標 GHCR 倉庫 (請務必修改 YOUR_USERNAME 為您自己的 GitHub 使用者名稱，且必須為小寫)
+      TARGET_REPO: ghcr.io/omygpt/ollama
 
     steps:
-      # 步驟 1: 拉取 repo 程式碼
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 步驟 2: 安裝 crane 工具
       - name: Set up crane
         uses: imjasonh/setup-crane@v0.1
 
-      # 步驟 3: 登入 Docker Hub
       - name: Login to Docker Hub
         run: crane auth login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }} docker.io
         
-      # 步驟 4: 登入 GitHub Container Registry (GHCR)
       - name: Login to GitHub Container Registry
         run: crane auth login -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
         
-      # 步驟 5: 執行智能過濾與同步邏輯
-      - name: Filter and Sync Latest Stable Tags
+      - name: Filter and Sync Latest Stable Tags for Ollama
         run: |
           echo "Fetching all tags from ${{ env.SOURCE_REPO }}..."
           
@@ -60,13 +51,47 @@ jobs:
           # 4. 為了確保 'latest' 標籤總是被同步，將它加入清單並去重
           final_tags=$(echo -e "${stable_tags}\nlatest" | sort -u)
 
-          echo "The following stable tags will be synced:"
+          echo "The following stable tags for ollama will be synced:"
           echo "${final_tags}"
           
           echo "Starting sync to ${{ env.TARGET_REPO }}..."
           for tag in $final_tags; do
-            echo "--> Syncing tag: $tag"
+            echo "--> Syncing ollama tag: $tag"
             crane copy "${{ env.SOURCE_REPO }}:$tag" "${{ env.TARGET_REPO }}:$tag"
           done
           
-          echo "Sync completed!"
+          echo "Ollama sync completed!"
+
+  sync-vllm:
+    name: Sync Latest vllm-openai Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      
+    env:
+      # 來源 Docker Hub 倉庫
+      SOURCE_REPO: vllm/vllm-openai
+      # 目標 GHCR 倉庫
+      TARGET_REPO: ghcr.io/omygpt/vllm-openai
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up crane
+        uses: imjasonh/setup-crane@v0.1
+
+      - name: Login to Docker Hub
+        run: crane auth login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }} docker.io
+        
+      - name: Login to GitHub Container Registry
+        run: crane auth login -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
+        
+      - name: Sync Latest Tag for vllm-openai
+        run: |
+          echo "Starting sync for ${{ env.SOURCE_REPO }}:latest..."
+          
+          crane copy "${{ env.SOURCE_REPO }}:latest" "${{ env.TARGET_REPO }}:latest"
+          
+          echo "vllm-openai sync completed!"
