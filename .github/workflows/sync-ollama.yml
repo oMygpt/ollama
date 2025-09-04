@@ -93,7 +93,9 @@ jobs:
       # 新增步驟：登入阿里雲容器註冊表
       - name: Login to Aliyun Container Registry
         # 請確保您已在倉庫 Secrets 中設定 ALIYUN_USERNAME 和 ALIYUN_PASSWORD
-        run: crane auth login -u ${{ secrets.ALIYUN_USERNAME }} -p ${{ secrets.ALIYUN_PASSWORD }} registry.cn-hangzhou.aliyuncs.com
+        run: |
+          echo "Attempting to log in with username: ${{ secrets.ALIYUN_USERNAME }}"
+          crane auth login -u ${{ secrets.ALIYUN_USERNAME }} -p ${{ secrets.ALIYUN_PASSWORD }} registry.cn-hangzhou.aliyuncs.com
         
       - name: Sync Latest Tag for vllm-openai to multi-registry
         run: |
