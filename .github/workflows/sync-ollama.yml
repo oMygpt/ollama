@@ -1,12 +1,10 @@
 # .github/workflows/sync-images.yml
-
 name: Sync Docker Images to GHCR and AliyunCR
-
 on:
   # 每日排程觸發：設定於 UTC 時間 凌晨 2 點執行
   # 這對應到台灣/香港/北京時間 (CST, UTC+8) 的上午 10 點
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '0 2 * * *'  # 修正 cron 表达式
   
   # 手動觸發：允許您隨時從 GitHub 網站的 Actions 頁面手動執行
   workflow_dispatch:
@@ -18,20 +16,16 @@ jobs:
     permissions:
       contents: read
       packages: write
-
     env:
       # 來源 Docker Hub 倉庫
       SOURCE_REPO: ollama/ollama
       # 目標 GHCR 倉庫 (請務必修改 YOUR_USERNAME 為您自己的 GitHub 使用者名稱，且必須為小寫)
       TARGET_REPO: ghcr.io/omygpt/ollama
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set up crane
         uses: imjasonh/setup-crane@v0.1
-
       - name: Login to Docker Hub
         run: crane auth login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }} docker.io
         
@@ -50,7 +44,6 @@ jobs:
           
           # 4. 為了確保 'latest' 標籤總是被同步，將它加入清單並去重
           final_tags=$(echo -e "${stable_tags}\nlatest" | sort -u)
-
           echo "The following stable tags for ollama will be synced:"
           echo "${final_tags}"
           
@@ -76,26 +69,34 @@ jobs:
       GHCR_TARGET_REPO: ghcr.io/omygpt/vllm-openai
       # 目標阿里雲倉庫
       ALIYUN_TARGET_REPO: registry.cn-hangzhou.aliyuncs.com/dslab/vllm
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set up crane
         uses: imjasonh/setup-crane@v0.1
-
       - name: Login to Docker Hub
         run: crane auth login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }} docker.io
         
       - name: Login to GitHub Container Registry
         run: crane auth login -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
       
-      # 新增步驟：登入阿里雲容器註冊表
+      # 修正阿里雲登入步驟
       - name: Login to Aliyun Container Registry
-        # 請確保您已在倉庫 Secrets 中設定 ALIYUN_USERNAME 和 ALIYUN_PASSWORD
         run: |
-          echo "Attempting to log in with username: ${{ secrets.ALIYUN_USERNAME }}"
-          crane auth login -u ${{ secrets.ALIYUN_USERNAME }} -p ${{ secrets.ALIYUN_PASSWORD }} registry.cn-hangzhou.aliyuncs.com
+          echo "Logging in to Aliyun Container Registry..."
+          # 增加调试信息，但不显示完整用户名（安全考虑）
+          echo "Registry: registry.cn-hangzhou.aliyuncs.com"
+          echo "Namespace: dslab"
+          
+          # 尝试登录，增加错误处理
+          if ! crane auth login -u "${{ secrets.ALIYUN_USERNAME }}" -p "${{ secrets.ALIYUN_PASSWORD }}" registry.cn-hangzhou.aliyuncs.com; then
+            echo "Failed to login to Aliyun Container Registry"
+            echo "Please check your ALIYUN_USERNAME and ALIYUN_PASSWORD secrets"
+            echo "Username should be in format: namespace@阿里云账号ID or full access credential username"
+            exit 1
+          fi
+          
+          echo "Successfully logged in to Aliyun Container Registry"
         
       - name: Sync Latest Tag for vllm-openai to multi-registry
         run: |
@@ -104,11 +105,20 @@ jobs:
           
           # 1. 同步到 GHCR
           echo "--> Syncing to GHCR: ${{ env.GHCR_TARGET_REPO }}:$TAG"
-          crane copy "${{ env.SOURCE_REPO }}:$TAG" "${{ env.GHCR_TARGET_REPO }}:$TAG"
+          if crane copy "${{ env.SOURCE_REPO }}:$TAG" "${{ env.GHCR_TARGET_REPO }}:$TAG"; then
+            echo "✅ GHCR sync completed successfully"
+          else
+            echo "❌ GHCR sync failed"
+            exit 1
+          fi
           
           # 2. 同步到阿里雲 ACR
           echo "--> Syncing to Aliyun CR: ${{ env.ALIYUN_TARGET_REPO }}:$TAG"
-          crane copy "${{ env.SOURCE_REPO }}:$TAG" "${{ env.ALIYUN_TARGET_REPO }}:$TAG"
+          if crane copy "${{ env.SOURCE_REPO }}:$TAG" "${{ env.ALIYUN_TARGET_REPO }}:$TAG"; then
+            echo "✅ Aliyun CR sync completed successfully"
+          else
+            echo "❌ Aliyun CR sync failed"
+            exit 1
+          fi
           
-          echo "vllm-openai multi-registry sync completed!"
-
+          echo "🎉 vllm-openai multi-registry sync completed!"
